@@ -439,6 +439,7 @@ class MainWindow(QMainWindow):
                 ("shifts", "Смен за месяц"),
                 ("shortage", "Недостачи за месяц"),
                 ("surplus", "Излишки за месяц"),
+                ("no_deviation", "Без отклонений"),
             ]
         ):
             card = QLabel()
@@ -605,9 +606,16 @@ class MainWindow(QMainWindow):
         branch_id = self.user["branch_id"] if not self.is_manager else None
         summary = self.database.get_dashboard_summary(branch_id)
         for key, (label, title) in self.kpi_values.items():
-            value = summary[key]
-            if key in ("shortage", "surplus"):
-                value = f"{format_money(value)} ₸"
+            if key == "no_deviation":
+                value = summary["no_deviation_shifts"]
+            else:
+                value = summary[key]
+            if key == "shortage":
+                value = f"{summary['shortage_shifts']} смен · {format_money(value)} ₸"
+            elif key == "surplus":
+                value = f"{summary['surplus_shifts']} смен · {format_money(value)} ₸"
+            elif key == "no_deviation":
+                value = f"{summary['no_deviation_shifts']} смен"
             label.setText(
                 f"<span style='color:#555555'>{title}</span><br>"
                 f"<span style='font-size:23px;font-weight:700;color:#171717'>{value}</span>"

@@ -10,10 +10,11 @@ from unittest.mock import patch
 import aiohttp
 import psycopg2
 from openpyxl import load_workbook
-from PyQt5.QtWidgets import QApplication, QHeaderView, QMessageBox
+from PyQt5.QtCore import QDate, Qt
+from PyQt5.QtWidgets import QApplication, QDialog, QHeaderView, QMessageBox
 
 from db import Database, hash_password, verify_password
-from main import APP_STYLE, MainWindow
+from main import APP_STYLE, MainWindow, ShiftDialog
 
 
 class ApplicationTests(unittest.TestCase):
@@ -111,6 +112,104 @@ class ApplicationTests(unittest.TestCase):
                 self.database.delete_employee(employee_id)
             self.database.delete_branch(branch["id"])
 
+    def test_dashboard_summarizes_shortage_surplus_and_no_deviation(self):
+        branch_name = f"summary-{uuid.uuid4()}"
+        self.database.save_branch(None, branch_name, "test address")
+        branch = next(item for item in self.database.get_branches() if item["name"] == branch_name)
+        employee_id = None
+        try:
+            self.database.save_employee(None, branch["id"], "Summary Test", "Cashier", "", True)
+            employee = next(
+                item for item in self.database.get_employees(branch["id"])
+                if item["full_name"] == "Summary Test"
+            )
+            employee_id = employee["id"]
+            for index, (shortage, surplus) in enumerate(
+                [(1250, 0), (0, 750), (0, 0)]
+            ):
+                self.database.save_shift(
+                    None,
+                    branch["id"],
+                    employee_id,
+                    date.today(),
+                    "Day",
+                    8,
+                    shortage,
+                    surplus,
+                    f"summary-{index}",
+                    self.manager["id"],
+                )
+
+            summary = self.database.get_dashboard_summary(branch["id"])
+            self.assertEqual(summary["shifts"], 3)
+            self.assertEqual(summary["shortage_shifts"], 1)
+            self.assertEqual(summary["shortage"], 1250)
+            self.assertEqual(summary["surplus_shifts"], 1)
+            self.assertEqual(summary["surplus"], 750)
+            self.assertEqual(summary["no_deviation_shifts"], 1)
+            scoped_cashier = dict(self.cashier, branch_id=branch["id"])
+            dashboard = MainWindow(self.database, scoped_cashier)
+            self.assertIn("1 смен · 1 250.00 ₸", dashboard.kpi_values["shortage"][0].text())
+            self.assertIn("1 смен · 750.00 ₸", dashboard.kpi_values["surplus"][0].text())
+            self.assertIn("1 смен", dashboard.kpi_values["no_deviation"][0].text())
+        finally:
+            with self.database.connect() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("DELETE FROM shifts WHERE branch_id = %s", (branch["id"],))
+            if employee_id is not None:
+                self.database.delete_employee(employee_id)
+            self.database.delete_branch(branch["id"])
+
+    def test_manager_can_edit_a_shift_from_the_interface(self):
+        branch = self.database.get_branches()[0]
+        employee = self.database.get_branch_employees(branch["id"])[0]
+        original_notes = f"ui-edit-{uuid.uuid4()}"
+        updated_notes = f"ui-edited-{uuid.uuid4()}"
+        self.database.save_shift(
+            None,
+            branch["id"],
+            employee["id"],
+            date.today(),
+            "Дневная",
+            8,
+            500,
+            0,
+            original_notes,
+            self.manager["id"],
+        )
+        shift = next(
+            item for item in self.database.get_shifts(date.today(), date.today(), branch["id"])
+            if item["notes"] == original_notes
+        )
+        window = MainWindow(self.database, self.manager)
+        row = next(
+            row for row in range(window.shift_table.model().rowCount())
+            if window.shift_table.model().item(row, 0).data(Qt.UserRole) == shift["id"]
+        )
+        window.shift_table.setCurrentIndex(window.shift_table.model().index(row, 0))
+        dialog = ShiftDialog(self.database, [branch], shift=shift)
+        dialog.shift_name.setCurrentText("Ночная")
+        dialog.hours.setValue(10)
+        dialog.shortage.setValue(1250)
+        dialog.notes.setText(updated_notes)
+        with patch("main.ShiftDialog", return_value=dialog), patch.object(
+            dialog, "exec_", return_value=QDialog.Accepted
+        ):
+            try:
+                window.edit_shift()
+                updated_shift = next(
+                    item for item in self.database.get_shifts(
+                        date.today(), date.today(), branch["id"]
+                    )
+                    if item["id"] == shift["id"]
+                )
+                self.assertEqual(updated_shift["shift_name"], "Ночная")
+                self.assertEqual(float(updated_shift["hours"]), 10)
+                self.assertEqual(float(updated_shift["shortage"]), 1250)
+                self.assertEqual(updated_shift["notes"], updated_notes)
+            finally:
+                self.database.delete_shift(shift["id"])
+
     def test_role_specific_interface_and_magnum_inspired_palette(self):
         manager_window = MainWindow(self.database, self.manager)
         cashier_window = MainWindow(self.database, self.cashier)
@@ -136,7 +235,7 @@ class ApplicationTests(unittest.TestCase):
             manager_window.employee_table.verticalHeader().sectionResizeMode(0),
             QHeaderView.ResizeToContents,
         )
-        self.assertEqual(len(manager_window.kpi_values), 5)
+        self.assertEqual(len(manager_window.kpi_values), 6)
 
     def test_excel_report_contains_shifts_and_staff_sheets(self):
         temporary_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
@@ -144,6 +243,29 @@ class ApplicationTests(unittest.TestCase):
         temporary_file.close()
         report_path.unlink()
         manager_window = MainWindow(self.database, self.manager)
+        branch = self.database.get_branches()[0]
+        employee = self.database.get_branch_employees(branch["id"])[0]
+        notes = f"excel-export-{uuid.uuid4()}"
+        self.database.save_shift(
+            None,
+            branch["id"],
+            employee["id"],
+            date.today(),
+            "Day",
+            8,
+            0,
+            0,
+            notes,
+            self.manager["id"],
+        )
+        shifts = self.database.get_shifts(date.today(), date.today(), branch["id"])
+        shift_id = next(item["id"] for item in shifts if item["notes"] == notes)
+        manager_window.shift_branch_filter.setCurrentIndex(
+            manager_window.shift_branch_filter.findData(branch["id"])
+        )
+        today = QDate(date.today().year, date.today().month, date.today().day)
+        manager_window.date_from.setDate(today)
+        manager_window.date_to.setDate(today)
         with patch(
             "main.QFileDialog.getSaveFileName",
             return_value=(str(report_path), "Книга Excel (*.xlsx)"),
@@ -154,7 +276,16 @@ class ApplicationTests(unittest.TestCase):
                 self.assertEqual(workbook.sheetnames, ["Смены", "Сотрудники"])
                 self.assertEqual(workbook["Смены"].freeze_panes, "A2")
                 self.assertEqual(workbook["Смены"].cell(1, 1).value, "Дата")
+                self.assertGreater(workbook["Смены"].max_row, 1)
+                self.assertTrue(
+                    any(
+                        row[7].value == notes
+                        for row in workbook["Смены"].iter_rows(min_row=2)
+                    )
+                )
+                self.assertGreater(workbook["Сотрудники"].max_row, 1)
             finally:
+                self.database.delete_shift(shift_id)
                 if report_path.exists():
                     report_path.unlink()
 

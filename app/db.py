@@ -361,12 +361,27 @@ class Database:
                 )
                 employee_count = cursor.fetchone()[0]
                 cursor.execute(
-                    "SELECT COUNT(*), COALESCE(SUM(shortage), 0), COALESCE(SUM(surplus), 0) "
-                    "FROM shifts WHERE work_date >= DATE_TRUNC('month', CURRENT_DATE)::date"
+                    """
+                    SELECT COUNT(*),
+                           COALESCE(SUM(shortage), 0),
+                           COALESCE(SUM(surplus), 0),
+                           COUNT(*) FILTER (WHERE shortage > 0),
+                           COUNT(*) FILTER (WHERE surplus > 0),
+                           COUNT(*) FILTER (WHERE shortage = 0 AND surplus = 0)
+                    FROM shifts
+                    WHERE work_date >= DATE_TRUNC('month', CURRENT_DATE)::date
+                    """
                     + (" AND branch_id = %s" if branch_id is not None else ""),
                     parameters,
                 )
-                monthly_shifts, monthly_shortage, monthly_surplus = cursor.fetchone()
+                (
+                    monthly_shifts,
+                    monthly_shortage,
+                    monthly_surplus,
+                    shortage_shifts,
+                    surplus_shifts,
+                    no_deviation_shifts,
+                ) = cursor.fetchone()
                 cursor.execute(
                     "SELECT COUNT(*) FROM shifts WHERE work_date = CURRENT_DATE"
                     + (" AND branch_id = %s" if branch_id is not None else ""),
@@ -379,4 +394,7 @@ class Database:
             "today_shifts": today_shifts,
             "shortage": monthly_shortage,
             "surplus": monthly_surplus,
+            "shortage_shifts": shortage_shifts,
+            "surplus_shifts": surplus_shifts,
+            "no_deviation_shifts": no_deviation_shifts,
         }
