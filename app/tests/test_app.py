@@ -14,7 +14,7 @@ from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtWidgets import QApplication, QDialog, QHeaderView, QMessageBox
 
 from db import Database, hash_password, verify_password
-from main import APP_STYLE, MainWindow, ShiftDialog
+from main import APP_STYLE, ApplicationController, LoginDialog, MainWindow, ShiftDialog
 
 
 class ApplicationTests(unittest.TestCase):
@@ -236,6 +236,28 @@ class ApplicationTests(unittest.TestCase):
             QHeaderView.ResizeToContents,
         )
         self.assertEqual(len(manager_window.kpi_values), 6)
+        self.assertEqual(manager_window.logout_button.text(), "Выйти")
+        self.assertEqual(cashier_window.logout_button.text(), "Выйти")
+
+    def test_logout_authenticates_again_and_switches_user(self):
+        controller = ApplicationController(self.database, self.qt_app)
+        initial_window = MainWindow(self.database, self.manager)
+        initial_window.logout_requested.connect(controller.show_login)
+        controller.window = initial_window
+
+        login_dialog = LoginDialog(self.database)
+        login_dialog.user = self.cashier
+        with patch("main.LoginDialog", return_value=login_dialog), patch.object(
+            login_dialog, "exec_", return_value=QDialog.Accepted
+        ):
+            initial_window.logout_button.click()
+
+        self.assertEqual(controller.window.user["username"], self.cashier["username"])
+        self.assertFalse(initial_window.isVisible())
+        self.assertEqual(controller.window.logout_button.text(), "Выйти")
+        controller.window.deleteLater()
+        initial_window.deleteLater()
+        self.qt_app.processEvents()
 
     def test_excel_report_contains_shifts_and_staff_sheets(self):
         temporary_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)

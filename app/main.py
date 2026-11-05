@@ -1,10 +1,13 @@
+import os
+import signal
 import sys
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg2
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QTimer, pyqtSignal
 from PyQt5.QtGui import QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (
     QApplication,
@@ -337,6 +340,8 @@ class ShiftDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
+    logout_requested = pyqtSignal()
+
     def __init__(self, database, user):
         super().__init__()
         self.database = database
@@ -365,9 +370,14 @@ class MainWindow(QMainWindow):
         brand.setObjectName("brand")
         role = QLabel(f"{user['role']}  ·  {user['username']}")
         role.setObjectName("roleBadge")
+        self.logout_button = QPushButton("Выйти")
+        self.logout_button.setObjectName("dangerButton")
+        self.logout_button.setToolTip("Завершить сеанс и войти под другой учетной записью")
+        self.logout_button.clicked.connect(self.logout_requested.emit)
         header_layout.addWidget(brand)
         header_layout.addStretch()
         header_layout.addWidget(role)
+        header_layout.addWidget(self.logout_button)
         root.addWidget(header)
 
         self.tabs = QTabWidget()
@@ -945,6 +955,41 @@ class MainWindow(QMainWindow):
             )
 
 
+class ApplicationController:
+    def __init__(self, database, application):
+        self.database = database
+        self.application = application
+        self.window = None
+        self.login_dialog = None
+
+    def show_login(self):
+        if self.login_dialog is not None:
+            return
+
+        previous_window = self.window
+        if previous_window is not None:
+            previous_window.hide()
+
+        dialog = LoginDialog(self.database)
+        self.login_dialog = dialog
+        try:
+            result = dialog.exec_()
+        finally:
+            self.login_dialog = None
+
+        if result != QDialog.Accepted:
+            self.application.quit()
+            return False
+
+        window = MainWindow(self.database, dialog.user)
+        window.logout_requested.connect(self.show_login)
+        self.window = window
+        window.show()
+        if previous_window is not None:
+            previous_window.deleteLater()
+        return True
+
+
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(APP_STYLE)
@@ -955,12 +1000,25 @@ def main():
         show_error(None, "Не удалось подключиться к базе данных", error)
         return 1
 
-    login = LoginDialog(database)
-    if login.exec_() != QDialog.Accepted:
-        return 0
-    window = MainWindow(database, login.user)
-    window.show()
-    return app.exec_()
+    controller = ApplicationController(database, app)
+    reauthentication_signal = getattr(signal, "SIGUSR1", None)
+    pid_file = Path("/tmp/pyqt-app.pid")
+    if reauthentication_signal is not None:
+        pid_file.write_text(str(os.getpid()), encoding="ascii")
+
+        def request_login(_signum, _frame):
+            QTimer.singleShot(0, controller.show_login)
+
+        signal.signal(reauthentication_signal, request_login)
+
+    try:
+        if not controller.show_login():
+            return 0
+        return app.exec_()
+    finally:
+        if reauthentication_signal is not None and pid_file.exists():
+            if pid_file.read_text(encoding="ascii").strip() == str(os.getpid()):
+                pid_file.unlink()
 
 
 if __name__ == "__main__":

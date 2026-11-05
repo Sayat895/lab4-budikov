@@ -1,6 +1,43 @@
 import asyncio
+import logging
+import os
+import signal
+from pathlib import Path
 
 from aiohttp import WSMsgType, web
+
+
+logger = logging.getLogger(__name__)
+APPLICATION_PID_FILE = Path("/tmp/pyqt-app.pid")
+
+
+def request_reauthentication():
+    reauthentication_signal = getattr(signal, "SIGUSR1", None)
+    if reauthentication_signal is None:
+        logger.error("This platform does not support the application reauthentication signal")
+        return
+
+    try:
+        process_id = int(APPLICATION_PID_FILE.read_text(encoding="ascii").strip())
+    except FileNotFoundError:
+        return
+    except ValueError:
+        logger.error("The application PID file contains an invalid process ID")
+        return
+
+    command_line_path = Path("/proc") / str(process_id) / "cmdline"
+    try:
+        command_line = command_line_path.read_bytes().split(b"\0")
+    except FileNotFoundError:
+        return
+    if b"/app/main.py" not in command_line:
+        logger.warning("Skipped reauthentication because the PID does not belong to the app")
+        return
+
+    try:
+        os.kill(process_id, reauthentication_signal)
+    except ProcessLookupError:
+        logger.info("The application exited before reauthentication was requested")
 
 
 async def proxy_vnc(request):
@@ -42,6 +79,7 @@ async def proxy_vnc(request):
 
     writer.close()
     await writer.wait_closed()
+    request_reauthentication()
     if not websocket.closed:
         await websocket.close()
     return websocket
