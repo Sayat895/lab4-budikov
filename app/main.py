@@ -8,7 +8,7 @@ import psycopg2
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from PyQt5.QtCore import Qt, QDate, QTimer, pyqtSignal
-from PyQt5.QtGui import QStandardItem, QStandardItemModel
+from PyQt5.QtGui import QKeySequence, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -27,6 +27,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QShortcut,
     QStatusBar,
     QTabWidget,
     QTableView,
@@ -39,95 +40,132 @@ from db import Database
 
 APP_STYLE = """
 QWidget {
-    background: #f4f7fb;
-    color: #171717;
+    background: #f5f5f2;
+    color: #242424;
     font-family: "DejaVu Sans";
-    font-size: 15px;
+    font-size: 14px;
 }
-QMainWindow { background: #f7f5f1; }
-QLabel#pageTitle { font-size: 25px; font-weight: 700; color: #171717; }
-QLabel#muted { color: #555555; }
+QMainWindow, QDialog { background: #f5f5f2; }
+QLabel#pageTitle { font-size: 26px; font-weight: 700; color: #242424; }
+QLabel#muted { color: #6b6b68; }
 QLabel#brand {
     background: transparent;
-    color: white;
-    font-size: 22px;
+    color: #a51f32;
+    font-size: 21px;
     font-weight: 700;
 }
 QLabel#roleBadge {
-    background: #f5d65e;
-    color: #3b2b00;
-    border-radius: 12px;
-    padding: 6px 12px;
+    background: #f8e9eb;
+    color: #8d1d2b;
+    border: 1px solid #efd0d4;
+    border-radius: 14px;
+    padding: 7px 13px;
     font-weight: 600;
 }
-QWidget#topBar { background: #871b2a; border-radius: 12px; }
+QWidget#topBar {
+    background: #ffffff;
+    border: 1px solid #e8e5df;
+    border-radius: 14px;
+}
 QTabWidget::pane {
     background: white;
-    border: 1px solid #e7e0d6;
-    border-radius: 10px;
-    top: -1px;
+    border: 1px solid #e8e5df;
+    border-radius: 14px;
+    top: -2px;
 }
 QTabBar::tab {
     background: transparent;
-    color: #494949;
-    padding: 11px 18px;
-    margin-right: 5px;
+    color: #666663;
+    padding: 12px 19px;
+    margin-right: 4px;
     font-weight: 600;
 }
 QTabBar::tab:selected {
     color: #871b2a;
-    border-bottom: 3px solid #e1b922;
+    border-bottom: 3px solid #c49a36;
 }
+QTabBar::tab:hover:!selected { color: #a51f32; }
 QPushButton {
     background: white;
-    color: #171717;
-    border: 1px solid #d8d1c7;
-    border-radius: 7px;
-    padding: 8px 13px;
-    min-height: 24px;
+    color: #333330;
+    border: 1px solid #dedbd4;
+    border-radius: 9px;
+    padding: 9px 15px;
+    min-height: 25px;
     font-weight: 600;
 }
-QPushButton:hover { background: #f8f2e7; }
+QPushButton:hover { background: #f9f4e9; border-color: #c9b276; }
+QPushButton:pressed { background: #f1e7d4; }
+QPushButton:disabled { color: #a6a6a1; background: #f0efec; }
 QPushButton#primaryButton {
     color: white;
     background: #a51f32;
     border: 1px solid #a51f32;
 }
-QPushButton#primaryButton:hover { background: #871b2a; }
-QPushButton#dangerButton { color: #a51f32; }
+QPushButton#primaryButton:hover { background: #871b2a; border-color: #871b2a; }
+QPushButton#primaryButton:pressed { background: #6f1723; }
+QPushButton#dangerButton { color: #a51f32; border-color: #efd0d4; }
+QPushButton#dangerButton:hover { background: #fbf0f1; border-color: #dfaab1; }
 QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox {
     background: white;
-    color: #171717;
-    border: 1px solid #ccc4b9;
-    border-radius: 6px;
+    color: #242424;
+    border: 1px solid #d9d6cf;
+    border-radius: 8px;
+    padding: 9px 11px;
+    min-height: 25px;
+    selection-background-color: #a51f32;
+    selection-color: white;
+}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QDoubleSpinBox:focus {
+    border: 2px solid #a51f32;
     padding: 8px 10px;
-    min-height: 24px;
+}
+QComboBox::drop-down, QDateEdit::drop-down { border: none; width: 26px; }
+QComboBox QAbstractItemView {
+    background: white;
+    selection-background-color: #f8e9eb;
+    selection-color: #871b2a;
+    border: 1px solid #dedbd4;
+    padding: 4px;
 }
 QTableView {
     background: white;
-    alternate-background-color: #faf8f4;
-    color: #171717;
-    border: 1px solid #e1dbd1;
-    border-radius: 7px;
-    gridline-color: #eee9e1;
-    selection-background-color: #f5e7b0;
-    selection-color: #171717;
+    alternate-background-color: #faf9f7;
+    color: #282826;
+    border: 1px solid #e8e5df;
+    border-radius: 10px;
+    gridline-color: #f0eeea;
+    selection-background-color: #f8e9eb;
+    selection-color: #4a1018;
+    outline: none;
 }
 QHeaderView::section {
-    background: #f2eee7;
-    color: #343434;
+    background: #f7f6f3;
+    color: #555551;
     border: none;
-    border-bottom: 1px solid #ddd6cb;
-    padding: 10px 9px;
+    border-bottom: 1px solid #e8e5df;
+    padding: 11px 10px;
     font-weight: 600;
 }
 QLabel#card {
     background: white;
-    color: #171717;
-    border: 1px solid #e7e0d6;
-    border-radius: 9px;
-    padding: 16px;
+    color: #242424;
+    border: 1px solid #e8e5df;
+    border-left: 4px solid #a51f32;
+    border-radius: 11px;
+    padding: 17px;
 }
+QStatusBar { background: transparent; color: #6b6b68; }
+QToolTip {
+    background: #282826;
+    color: white;
+    border: none;
+    padding: 6px 8px;
+}
+QScrollBar:vertical { background: transparent; width: 12px; margin: 3px; }
+QScrollBar::handle:vertical { background: #d3d0c9; border-radius: 5px; min-height: 25px; }
+QScrollBar::handle:vertical:hover { background: #a9a59d; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 """
 
 
@@ -391,7 +429,44 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.setStatusBar(QStatusBar())
+        self._install_shortcuts()
         self.refresh_all()
+
+    def _install_shortcuts(self):
+        self.refresh_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        self.refresh_shortcut.activated.connect(self.refresh_all)
+        self.logout_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
+        self.logout_shortcut.activated.connect(self.logout_requested.emit)
+        self.tab_shortcuts = []
+        for index in range(self.tabs.count()):
+            shortcut = QShortcut(QKeySequence(f"Ctrl+{index + 1}"), self)
+            shortcut.activated.connect(
+                lambda tab_index=index: self.tabs.setCurrentIndex(tab_index)
+            )
+            self.tab_shortcuts.append(shortcut)
+        for table in self.findChildren(QTableView):
+            copy_shortcut = QShortcut(QKeySequence.Copy, table)
+            copy_shortcut.setContext(Qt.WidgetShortcut)
+            copy_shortcut.activated.connect(
+                lambda selected_table=table: self.copy_selected_row(selected_table)
+            )
+            table.copy_shortcut = copy_shortcut
+
+    def copy_selected_row(self, table):
+        selected_rows = table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        model = table.model()
+        rows = []
+        for selected in selected_rows:
+            rows.append(
+                "\t".join(
+                    model.index(selected.row(), column).data() or ""
+                    for column in range(model.columnCount())
+                )
+            )
+        QApplication.clipboard().setText("\n".join(rows))
+        self.statusBar().showMessage("Строка скопирована в буфер обмена.", 3000)
 
     def _make_button(self, text, slot, primary=False, danger=False):
         button = QPushButton(text)
@@ -961,11 +1036,24 @@ class ApplicationController:
         self.application = application
         self.window = None
         self.login_dialog = None
+        self.session_active = False
+        self.reauthentication_pending = False
+
+    def request_reauthentication(self):
+        if self.session_active:
+            self.reauthentication_pending = True
+
+    def process_pending_reauthentication(self):
+        if not self.reauthentication_pending:
+            return
+        self.reauthentication_pending = False
+        self.show_login()
 
     def show_login(self):
         if self.login_dialog is not None:
             return
 
+        self.session_active = False
         previous_window = self.window
         if previous_window is not None:
             previous_window.hide()
@@ -981,6 +1069,7 @@ class ApplicationController:
             self.application.quit()
             return False
 
+        self.session_active = True
         window = MainWindow(self.database, dialog.user)
         window.logout_requested.connect(self.show_login)
         self.window = window
@@ -1007,9 +1096,14 @@ def main():
         pid_file.write_text(str(os.getpid()), encoding="ascii")
 
         def request_login(_signum, _frame):
-            QTimer.singleShot(0, controller.show_login)
+            controller.request_reauthentication()
 
         signal.signal(reauthentication_signal, request_login)
+        reauthentication_timer = QTimer(app)
+        reauthentication_timer.timeout.connect(
+            controller.process_pending_reauthentication
+        )
+        reauthentication_timer.start(100)
 
     try:
         if not controller.show_login():

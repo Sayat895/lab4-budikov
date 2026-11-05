@@ -11,6 +11,8 @@ import aiohttp
 import psycopg2
 from openpyxl import load_workbook
 from PyQt5.QtCore import QDate, Qt
+from PyQt5.QtGui import QStandardItem
+from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication, QDialog, QHeaderView, QMessageBox
 
 from db import Database, hash_password, verify_password
@@ -216,11 +218,14 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(manager_window.tabs.count(), 4)
         self.assertEqual(cashier_window.tabs.count(), 2)
         self.assertFalse(cashier_window.shift_branch_filter.isEnabled())
-        self.assertIn("color: #171717", APP_STYLE)
+        self.assertIn("background: #f5f5f2", APP_STYLE)
         self.assertIn("#a51f32", APP_STYLE)
         self.assertIn('font-family: "DejaVu Sans"', APP_STYLE)
-        self.assertIn("font-size: 15px", APP_STYLE)
-        self.assertIn("QLabel#brand {\n    background: transparent;\n    color: white;", APP_STYLE)
+        self.assertIn("font-size: 14px", APP_STYLE)
+        self.assertIn(
+            "QLabel#brand {\n    background: transparent;\n    color: #a51f32;",
+            APP_STYLE,
+        )
         self.assertTrue(manager_window.shift_table.wordWrap())
         self.assertEqual(manager_window.shift_table.horizontalHeader().minimumSectionSize(), 100)
         self.assertGreaterEqual(manager_window.shift_branch_filter.minimumWidth(), 210)
@@ -238,6 +243,23 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(len(manager_window.kpi_values), 6)
         self.assertEqual(manager_window.logout_button.text(), "Выйти")
         self.assertEqual(cashier_window.logout_button.text(), "Выйти")
+        self.assertEqual(manager_window.refresh_shortcut.key().toString(), "Ctrl+R")
+        self.assertEqual(manager_window.logout_shortcut.key().toString(), "Ctrl+Q")
+        self.assertEqual(len(manager_window.tab_shortcuts), manager_window.tabs.count())
+        self.assertEqual(manager_window.shift_table.copy_shortcut.key().toString(), "Ctrl+C")
+        manager_window.shift_table.model().clear()
+        manager_window.shift_table.model().setColumnCount(2)
+        manager_window.shift_table.model().appendRow(
+            [QStandardItem("Тест"), QStandardItem("Смена")]
+        )
+        manager_window.shift_table.selectRow(0)
+        manager_window.copy_selected_row(manager_window.shift_table)
+        self.assertEqual(QApplication.clipboard().text(), "Тест\tСмена")
+
+        login = LoginDialog(self.database)
+        QApplication.clipboard().setText("paste-test")
+        QTest.keyClick(login.username, Qt.Key_V, Qt.ControlModifier)
+        self.assertEqual(login.username.text(), "paste-test")
 
     def test_logout_authenticates_again_and_switches_user(self):
         controller = ApplicationController(self.database, self.qt_app)
@@ -253,11 +275,25 @@ class ApplicationTests(unittest.TestCase):
             initial_window.logout_button.click()
 
         self.assertEqual(controller.window.user["username"], self.cashier["username"])
+        self.assertEqual(controller.window.tabs.currentIndex(), 0)
         self.assertFalse(initial_window.isVisible())
         self.assertEqual(controller.window.logout_button.text(), "Выйти")
         controller.window.deleteLater()
         initial_window.deleteLater()
         self.qt_app.processEvents()
+
+    def test_initial_novnc_connection_does_not_queue_a_second_login(self):
+        controller = ApplicationController(self.database, self.qt_app)
+        controller.request_reauthentication()
+        self.assertFalse(controller.reauthentication_pending)
+
+        controller.session_active = True
+        controller.request_reauthentication()
+        self.assertTrue(controller.reauthentication_pending)
+        with patch.object(controller, "show_login") as show_login:
+            controller.process_pending_reauthentication()
+            show_login.assert_called_once_with()
+        self.assertFalse(controller.reauthentication_pending)
 
     def test_excel_report_contains_shifts_and_staff_sheets(self):
         temporary_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
@@ -317,6 +353,12 @@ class ApplicationTests(unittest.TestCase):
                 async with session.get("http://127.0.0.1:6080/vnc.html") as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn("noVNC", await response.text())
+
+                async with session.get("http://127.0.0.1:6080/app/ui.js") as response:
+                    self.assertEqual(response.status, 200)
+                    ui_script = await response.text()
+                    self.assertIn("Could not read the browser clipboard", ui_script)
+                    self.assertIn("stopImmediatePropagation", ui_script)
 
                 async with session.ws_connect(
                     "http://127.0.0.1:6080/websockify",
