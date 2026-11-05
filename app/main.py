@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QFormLayout,
     QFileDialog,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,16 +38,16 @@ APP_STYLE = """
 QWidget {
     background: #f4f7fb;
     color: #171717;
-    font-family: "Segoe UI";
-    font-size: 13px;
+    font-family: "DejaVu Sans";
+    font-size: 15px;
 }
 QMainWindow { background: #f7f5f1; }
-QLabel#pageTitle { font-size: 23px; font-weight: 700; color: #171717; }
+QLabel#pageTitle { font-size: 25px; font-weight: 700; color: #171717; }
 QLabel#muted { color: #555555; }
 QLabel#brand {
     background: transparent;
     color: white;
-    font-size: 21px;
+    font-size: 22px;
     font-weight: 700;
 }
 QLabel#roleBadge {
@@ -80,7 +81,7 @@ QPushButton {
     border: 1px solid #d8d1c7;
     border-radius: 7px;
     padding: 8px 13px;
-    min-height: 20px;
+    min-height: 24px;
     font-weight: 600;
 }
 QPushButton:hover { background: #f8f2e7; }
@@ -96,8 +97,8 @@ QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox {
     color: #171717;
     border: 1px solid #ccc4b9;
     border-radius: 6px;
-    padding: 7px 9px;
-    min-height: 20px;
+    padding: 8px 10px;
+    min-height: 24px;
 }
 QTableView {
     background: white;
@@ -114,7 +115,7 @@ QHeaderView::section {
     color: #343434;
     border: none;
     border-bottom: 1px solid #ddd6cb;
-    padding: 9px 7px;
+    padding: 10px 9px;
     font-weight: 600;
 }
 QLabel#card {
@@ -342,8 +343,13 @@ class MainWindow(QMainWindow):
         self.user = user
         self.is_manager = user["role"] == "Руководитель"
         self.setWindowTitle("Управление филиалом")
-        self.resize(1320, 860)
-        self.setMinimumSize(980, 680)
+        screen = QApplication.primaryScreen().availableGeometry()
+        width = min(1280, screen.width() - 32)
+        height = min(760, screen.height() - 32)
+        self.resize(width, height)
+        self.setMinimumSize(min(900, width), min(620, height))
+        self.move(screen.left() + (screen.width() - width) // 2,
+                  screen.top() + (screen.height() - height) // 2)
         self.branches = self.database.get_branches()
 
         central = QWidget()
@@ -394,9 +400,11 @@ class MainWindow(QMainWindow):
         table.setEditTriggers(QTableView.NoEditTriggers)
         table.setSortingEnabled(True)
         table.setTextElideMode(Qt.ElideRight)
+        table.setWordWrap(True)
         table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(38)
         table.horizontalHeader().setStretchLastSection(True)
-        table.horizontalHeader().setMinimumSectionSize(82)
+        table.horizontalHeader().setMinimumSectionSize(100)
         table.setModel(QStandardItemModel())
         table.model().setHorizontalHeaderLabels(headers)
         return table
@@ -410,6 +418,7 @@ class MainWindow(QMainWindow):
         heading.setObjectName("pageTitle")
         description = QLabel(subtitle)
         description.setObjectName("muted")
+        description.setWordWrap(True)
         layout.addWidget(heading)
         layout.addWidget(description)
         return page, layout
@@ -484,6 +493,7 @@ class MainWindow(QMainWindow):
         )
         filters = QHBoxLayout()
         self.shift_branch_filter = QComboBox()
+        self.shift_branch_filter.setMinimumWidth(210)
         self._fill_branch_combo(self.shift_branch_filter, include_all=self.is_manager)
         if not self.is_manager:
             self.shift_branch_filter.setEnabled(False)
@@ -584,7 +594,12 @@ class MainWindow(QMainWindow):
         table.setModel(model)
         table.resizeColumnsToContents()
         for column in range(model.columnCount()):
-            table.setColumnWidth(column, min(table.columnWidth(column), 260))
+            table.setColumnWidth(column, min(max(table.columnWidth(column), 100), 280))
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        for row in range(model.rowCount()):
+            for column in range(model.columnCount()):
+                item = model.item(row, column)
+                item.setToolTip(item.text())
 
     def refresh_dashboard(self):
         branch_id = self.user["branch_id"] if not self.is_manager else None

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import aiohttp
 import psycopg2
 from openpyxl import load_workbook
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QHeaderView, QMessageBox
 
 from db import Database, hash_password, verify_password
 from main import APP_STYLE, MainWindow
@@ -119,7 +119,23 @@ class ApplicationTests(unittest.TestCase):
         self.assertFalse(cashier_window.shift_branch_filter.isEnabled())
         self.assertIn("color: #171717", APP_STYLE)
         self.assertIn("#a51f32", APP_STYLE)
+        self.assertIn('font-family: "DejaVu Sans"', APP_STYLE)
+        self.assertIn("font-size: 15px", APP_STYLE)
         self.assertIn("QLabel#brand {\n    background: transparent;\n    color: white;", APP_STYLE)
+        self.assertTrue(manager_window.shift_table.wordWrap())
+        self.assertEqual(manager_window.shift_table.horizontalHeader().minimumSectionSize(), 100)
+        self.assertGreaterEqual(manager_window.shift_branch_filter.minimumWidth(), 210)
+        full_name = "Длинное имя сотрудника, которое не должно обрезаться"
+        manager_window._set_model(
+            manager_window.employee_table,
+            ["ФИО"],
+            [{"id": 1, "values": [full_name]}],
+        )
+        self.assertEqual(manager_window.employee_table.model().item(0, 0).toolTip(), full_name)
+        self.assertEqual(
+            manager_window.employee_table.verticalHeader().sectionResizeMode(0),
+            QHeaderView.ResizeToContents,
+        )
         self.assertEqual(len(manager_window.kpi_values), 5)
 
     def test_excel_report_contains_shifts_and_staff_sheets(self):
