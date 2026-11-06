@@ -68,16 +68,24 @@ QWidget#topBar {
     border-radius: 14px;
 }
 QTabWidget::pane {
-    background: white;
-    border: 1px solid #e8e5df;
-    border-radius: 14px;
-    top: -2px;
+    background: #f5f5f2;
+    border: 0;
+}
+QTabBar::base {
+    background: #f5f5f2;
+    border: 0;
+}
+QTabBar {
+    background: #f5f5f2;
+    border: 0;
 }
 QTabBar::tab {
-    background: transparent;
+    background: #f5f5f2;
     color: #666663;
-    padding: 12px 19px;
-    margin-right: 4px;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 10px 12px;
+    min-width: 76px;
     font-weight: 600;
 }
 QTabBar::tab:selected {
@@ -419,6 +427,11 @@ class MainWindow(QMainWindow):
         root.addWidget(header)
 
         self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.tabBar().setExpanding(True)
+        self.tabs.tabBar().setUsesScrollButtons(False)
+        self.tabs.tabBar().setElideMode(Qt.ElideNone)
+        self.tabs.tabBar().setDrawBase(False)
         self.tabs.addTab(self._build_dashboard(), "Обзор")
         if self.is_manager:
             self.tabs.addTab(self._build_employees(), "Сотрудники")
