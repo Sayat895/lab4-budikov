@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QStandardItem
 from PyQt5.QtTest import QTest
-from PyQt5.QtWidgets import QApplication, QDialog, QHeaderView, QMessageBox
+from PyQt5.QtWidgets import QApplication, QDialog, QHeaderView, QMessageBox, QPushButton
 
 from db import Database, hash_password, verify_password
 from main import APP_STYLE, ApplicationController, LoginDialog, MainWindow, ShiftDialog
@@ -243,6 +243,12 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(len(manager_window.kpi_values), 6)
         self.assertEqual(manager_window.logout_button.text(), "Выйти")
         self.assertEqual(cashier_window.logout_button.text(), "Выйти")
+        self.assertTrue(
+            any(
+                button.text() == "Экспорт в Excel"
+                for button in cashier_window.findChildren(QPushButton)
+            )
+        )
         self.assertEqual(manager_window.refresh_shortcut.key().toString(), "Ctrl+R")
         self.assertEqual(manager_window.logout_shortcut.key().toString(), "Ctrl+Q")
         self.assertEqual(len(manager_window.tab_shortcuts), manager_window.tabs.count())
@@ -344,6 +350,32 @@ class ApplicationTests(unittest.TestCase):
                 self.assertGreater(workbook["Сотрудники"].max_row, 1)
             finally:
                 self.database.delete_shift(shift_id)
+                if report_path.exists():
+                    report_path.unlink()
+
+    def test_cashier_can_export_only_their_branch(self):
+        temporary_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        report_path = Path(temporary_file.name)
+        temporary_file.close()
+        report_path.unlink()
+        cashier_window = MainWindow(self.database, self.cashier)
+        branch_id = self.cashier["branch_id"]
+
+        with patch(
+            "main.QFileDialog.getSaveFileName",
+            return_value=(str(report_path), "Книга Excel (*.xlsx)"),
+        ), patch.object(self.database, "get_shifts", return_value=[]) as get_shifts, patch.object(
+            self.database, "get_employees", return_value=[]
+        ) as get_employees, patch("main.QMessageBox.information"):
+            try:
+                cashier_window.export_excel()
+                self.assertEqual(get_shifts.call_args.args[2], branch_id)
+                get_employees.assert_called_once_with(branch_id)
+                workbook = load_workbook(report_path)
+                self.assertEqual(workbook.sheetnames, ["Смены", "Сотрудники"])
+                self.assertEqual(workbook["Смены"].max_row, 1)
+                self.assertEqual(workbook["Сотрудники"].max_row, 1)
+            finally:
                 if report_path.exists():
                     report_path.unlink()
 

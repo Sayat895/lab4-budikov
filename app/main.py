@@ -540,8 +540,8 @@ class MainWindow(QMainWindow):
 
         info = QLabel(
             "Начните с добавления сотрудников и филиалов. "
-            "Старший кассир может регистрировать смены, а руководитель — "
-            "управлять данными и выгружать отчеты в Excel."
+            "Старший кассир может регистрировать смены и выгружать отчет по своему "
+            "филиалу, а руководитель — управлять данными и формировать отчеты."
         )
         info.setWordWrap(True)
         info.setObjectName("card")
@@ -602,8 +602,7 @@ class MainWindow(QMainWindow):
         filters.addWidget(QLabel("по"))
         filters.addWidget(self.date_to)
         filters.addStretch()
-        if self.is_manager:
-            filters.addWidget(self._make_button("Экспорт в Excel", self.export_excel))
+        filters.addWidget(self._make_button("Экспорт в Excel", self.export_excel))
         layout.addLayout(filters)
 
         toolbar = QHBoxLayout()
@@ -937,8 +936,9 @@ class MainWindow(QMainWindow):
         if not path.lower().endswith(".xlsx"):
             path += ".xlsx"
         try:
-            shifts = self.database.get_shifts(start, end, self.shift_branch_filter.currentData())
-            employees = self.database.get_employees(self.shift_branch_filter.currentData())
+            branch_id = self._branch_scope(self.shift_branch_filter)
+            shifts = self.database.get_shifts(start, end, branch_id)
+            employees = self.database.get_employees(branch_id)
             workbook = Workbook()
             sheet = workbook.active
             sheet.title = "Смены"
