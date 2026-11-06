@@ -35,9 +35,9 @@ class Database:
         self.settings = {
             "host": os.getenv("DB_HOST", "localhost"),
             "port": int(os.getenv("DB_PORT", "5432")),
-            "dbname": os.getenv("DB_NAME", "app_db"),
-            "user": os.getenv("DB_USER", "admin"),
-            "password": os.getenv("DB_PASSWORD", ""),
+            "dbname": os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "app_db")),
+            "user": os.getenv("DB_USER", os.getenv("POSTGRES_USER", "admin")),
+            "password": os.getenv("DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "")),
             "connect_timeout": 4,
         }
 

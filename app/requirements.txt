@@ -1,4 +1,6 @@
-PyQt5==5.15.11
+fastapi==0.115.6
+uvicorn==0.34.0
+pywebview==5.4
 psycopg2-binary==2.9.9
 openpyxl==3.1.5
-aiohttp==3.11.18
+python-dotenv==1.0.1
