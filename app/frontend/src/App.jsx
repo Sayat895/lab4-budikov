@@ -18,6 +18,10 @@ function App() {
   const [view, setView] = useState("dashboard");
   const [pageData, setPageData] = useState({ branches: [], employees: [], shifts: [], summary: {} });
   const [branchFilter, setBranchFilter] = useState("");
+  const [employeeBranchFilter, setEmployeeBranchFilter] = useState("");
+  const [employeePositionFilter, setEmployeePositionFilter] = useState("");
+  const [employeeStatusFilter, setEmployeeStatusFilter] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [startDate, setStartDate] = useState(monthAgo);
   const [endDate, setEndDate] = useState(today);
   const [modal, setModal] = useState(null);
@@ -34,9 +38,7 @@ function App() {
       const [branches, summary, employees, shifts] = await Promise.all([
         request("/branches"),
         request(`/dashboard${queryString({ branch_id: branchId })}`),
-        isManager
-          ? request(`/employees${queryString({ branch_id: branchFilter || undefined })}`)
-          : Promise.resolve([]),
+        isManager ? request("/employees") : Promise.resolve([]),
         request(
           `/shifts${queryString({
             start_date: startDate,
@@ -210,6 +212,21 @@ function App() {
   }
 
   const visibleShifts = pageData.shifts;
+  const employeePositions = [...new Set(pageData.employees.map((employee) => employee.position))]
+    .sort((left, right) => left.localeCompare(right, "ru"));
+  const normalizedEmployeeSearch = employeeSearch.trim().toLocaleLowerCase("ru");
+  const visibleEmployees = pageData.employees.filter((employee) => {
+    const matchesSearch = !normalizedEmployeeSearch
+      || [employee.full_name, employee.position, employee.phone, employee.branch]
+        .join(" ")
+        .toLocaleLowerCase("ru")
+        .includes(normalizedEmployeeSearch);
+    const matchesBranch = !employeeBranchFilter || String(employee.branch_id) === employeeBranchFilter;
+    const matchesPosition = !employeePositionFilter || employee.position === employeePositionFilter;
+    const matchesStatus = !employeeStatusFilter
+      || (employeeStatusFilter === "active" ? employee.active : !employee.active);
+    return matchesSearch && matchesBranch && matchesPosition && matchesStatus;
+  });
   const navigation = [
     ["dashboard", "Обзор", "◫"],
     ...(isManager ? [["employees", "Сотрудники", "♙"]] : []),
@@ -293,9 +310,9 @@ function App() {
               <div className="toolbar">
                 <SelectField
                   ariaLabel="Фильтр по филиалу"
-                  className="filter-select"
-                  value={branchFilter}
-                  onChange={setBranchFilter}
+                  className="filter-select employee-filter-select"
+                  value={employeeBranchFilter}
+                  onChange={setEmployeeBranchFilter}
                   options={[
                     { value: "", label: "Все филиалы", detail: "Все доступные филиалы" },
                     ...pageData.branches.map((branch) => ({
@@ -305,14 +322,44 @@ function App() {
                     })),
                   ]}
                 />
+                <SelectField
+                  ariaLabel="Фильтр по должности"
+                  className="filter-select employee-filter-select"
+                  value={employeePositionFilter}
+                  onChange={setEmployeePositionFilter}
+                  options={[
+                    { value: "", label: "Все должности" },
+                    ...employeePositions.map((position) => ({ value: position, label: position })),
+                  ]}
+                />
+                <SelectField
+                  ariaLabel="Фильтр по статусу"
+                  className="filter-select employee-filter-select"
+                  value={employeeStatusFilter}
+                  onChange={setEmployeeStatusFilter}
+                  options={[
+                    { value: "", label: "Все статусы" },
+                    { value: "active", label: "Работает" },
+                    { value: "inactive", label: "Не работает" },
+                  ]}
+                />
+                <input
+                  className="employee-search"
+                  type="search"
+                  aria-label="Поиск сотрудников"
+                  placeholder="Имя, должность или телефон"
+                  value={employeeSearch}
+                  onChange={(event) => setEmployeeSearch(event.target.value)}
+                />
                 <span className="spacer" />
                 <button className="primary" onClick={() => setModal({ type: "employee" })}>＋ Добавить сотрудника</button>
               </div>
-              <DataTable columns={["ФИО", "Должность", "Телефон", "Филиал", "Статус", ""]} rows={pageData.employees.map((employee) => [
+              <DataTable columns={["ФИО", "Должность", "Телефон", "Филиал", "Статус", ""]} rows={visibleEmployees.map((employee) => [
                 employee.full_name, employee.position, employee.phone || "—", employee.branch,
                 <span className={`status ${employee.active ? "active" : ""}`} key="status">{employee.active ? "Работает" : "Не работает"}</span>,
                 <RowActions key="actions" onEdit={() => setModal({ type: "employee", record: employee })} onDelete={() => deleteRecord("employee", employee)} />,
               ])} />
+              <div className="table-footer">Показано: {visibleEmployees.length} из {pageData.employees.length}</div>
             </Panel>
           )}
 

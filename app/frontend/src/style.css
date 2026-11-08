@@ -96,8 +96,10 @@ button:disabled { cursor: wait; opacity: .65; }
 
 .toolbar { align-items: end; border-bottom: 1px solid #efebe5; display: flex; flex-wrap: wrap; gap: 10px; padding: 0 22px 16px; }
 .toolbar > .select-field { flex: 0 0 210px; }
+.toolbar > .employee-filter-select { flex: 1 1 175px !important; max-width: 220px; }
 .toolbar label { align-items: center; color: #77716a; display: flex; font-size: 12px; gap: 8px; }
 .toolbar input { padding: 8px 9px; width: 145px; }
+.employee-search { flex: 1 1 230px; max-width: 320px; min-width: 180px; }
 .spacer { flex: 1; }
 .button, .primary { align-items: center; background: #fff; border: 1px solid #ddd7ce; border-radius: 8px; color: #4a433e; display: inline-flex; font-size: 12px; font-weight: 650; gap: 8px; justify-content: center; min-height: 38px; padding: 8px 14px; }
 .button:hover { background: #faf7f0; border-color: #c7b37e; color: var(--wine); }
@@ -198,4 +200,5 @@ tbody tr:hover { background: #fcfaf6; }
   .toolbar { align-items: stretch; }
   .toolbar .spacer { display: none; }
   .toolbar > .select-field, .filter-select { flex: 1 1 100% !important; }
+  .toolbar > .employee-filter-select { max-width: none; }
 }
