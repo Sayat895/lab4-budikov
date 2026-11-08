@@ -54,7 +54,7 @@ def validate_shift_employee(database: Database, branch_id: int, employee_id: int
     if not any(employee["id"] == employee_id for employee in employees):
         raise HTTPException(
             status_code=422,
-            detail="Выбранный сотрудник не работает в этом филиале.",
+            detail="Сотрудник должен работать и не находиться в отпуске или на больничном.",
         )
 
 

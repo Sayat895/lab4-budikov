@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -25,8 +26,8 @@ class EmployeeRequest(BaseModel):
     branch_id: int
     full_name: str = Field(min_length=1, max_length=200)
     position: str = Field(min_length=1, max_length=200)
-    phone: str = Field(default="", max_length=50)
-    active: bool = True
+    phone: str = Field(min_length=10, max_length=50)
+    status: str = "Работает"
 
     @field_validator("full_name", "position")
     @classmethod
@@ -34,6 +35,26 @@ class EmployeeRequest(BaseModel):
         if not value.strip():
             raise ValueError("Поле не может быть пустым.")
         return value.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value):
+        digits = re.sub(r"\D", "", value)
+        if len(digits) == 10:
+            digits = f"7{digits}"
+        elif len(digits) == 11 and digits.startswith("8"):
+            digits = f"7{digits[1:]}"
+        if len(digits) != 11 or not digits.startswith("7"):
+            raise ValueError("Укажите телефон Казахстана в формате +7XXXXXXXXXX.")
+        return f"+{digits}"
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value):
+        allowed = {"Работает", "В отпуске", "На больничном", "Не работает"}
+        if value not in allowed:
+            raise ValueError("Выберите допустимый статус сотрудника.")
+        return value
 
 
 class ShiftRequest(BaseModel):

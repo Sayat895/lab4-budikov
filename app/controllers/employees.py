@@ -18,9 +18,9 @@ router = APIRouter(prefix="/api/employees", tags=["employees"])
 def list_employees(
     branch_id: int | None = None,
     database=Depends(get_database),
-    _user: dict = Depends(require_manager),
+    user: dict = Depends(get_current_user),
 ):
-    return database.get_employees(branch_id)
+    return database.get_employees(scoped_branch_id(user, branch_id))
 
 
 @router.get("/branch/{branch_id}")
@@ -41,7 +41,7 @@ def create_employee(
 ):
     validate_branch_id(database, payload.branch_id)
     database.save_employee(
-        None, payload.branch_id, payload.full_name, payload.position, payload.phone, payload.active
+        None, payload.branch_id, payload.full_name, payload.position, payload.phone, payload.status
     )
     return {"message": "Сотрудник добавлен."}
 
@@ -60,7 +60,7 @@ def update_employee(
         payload.full_name,
         payload.position,
         payload.phone,
-        payload.active,
+        payload.status,
     )
     return {"message": "Данные сотрудника обновлены."}
 

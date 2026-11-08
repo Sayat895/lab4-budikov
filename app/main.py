@@ -13,11 +13,15 @@ from dotenv import load_dotenv
 from controllers import auth, branches, dashboard, employees, reports, shifts
 from desktop_api import DesktopApi
 from db import Database
+from tls_config import certificate_directory
 
 
 FRONTEND_DIST = Path(__file__).parent / "frontend" / "dist"
 load_dotenv(Path(__file__).parent.parent / ".env")
 os.environ.setdefault("DB_PORT", "5433")
+TLS_DIR = certificate_directory()
+TLS_CERTIFICATE = TLS_DIR / "server.crt"
+TLS_PRIVATE_KEY = TLS_DIR / "server-key.pem"
 
 
 def create_app(database=None, initialize_database=True, frontend_dist=FRONTEND_DIST):
@@ -72,6 +76,10 @@ def main():
             "React UI is not built. Run `npm --prefix frontend install` and "
             "`npm --prefix frontend run build` first."
         )
+    if not TLS_CERTIFICATE.is_file() or not TLS_PRIVATE_KEY.is_file():
+        raise FileNotFoundError(
+            "Local HTTPS certificate is missing. Run `python app\\setup_https.py` first."
+        )
 
     host = "127.0.0.1"
     port = int(os.getenv("APP_API_PORT", "8000"))
@@ -82,6 +90,8 @@ def main():
             port=port,
             log_level=os.getenv("APP_LOG_LEVEL", "info").lower(),
             access_log=False,
+            ssl_certfile=str(TLS_CERTIFICATE),
+            ssl_keyfile=str(TLS_PRIVATE_KEY),
         )
     )
     server_thread = threading.Thread(target=server.run, name="rest-api", daemon=True)
@@ -100,7 +110,7 @@ def main():
         desktop_api = DesktopApi()
         window = webview.create_window(
             "Управление филиалом",
-            f"http://{host}:{port}/?desktop=1",
+            f"https://{host}:{port}/?desktop=1",
             js_api=desktop_api,
             width=1280,
             height=800,

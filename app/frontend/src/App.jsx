@@ -9,8 +9,17 @@ const localDate = (date) => {
 };
 const today = localDate(new Date());
 const monthAgo = localDate(new Date(Date.now() - 30 * 86400000));
+const employeeStatuses = ["Работает", "В отпуске", "На больничном", "Не работает"];
 function money(value) {
   return new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2 }).format(Number(value || 0));
+}
+function statusClass(status) {
+  return {
+    "Работает": "active",
+    "В отпуске": "vacation",
+    "На больничном": "sick-leave",
+    "Не работает": "inactive",
+  }[status] || "";
 }
 
 function App() {
@@ -38,7 +47,7 @@ function App() {
       const [branches, summary, employees, shifts] = await Promise.all([
         request("/branches"),
         request(`/dashboard${queryString({ branch_id: branchId })}`),
-        isManager ? request("/employees") : Promise.resolve([]),
+        request(`/employees${queryString({ branch_id: isManager ? undefined : user.branch_id })}`),
         request(
           `/shifts${queryString({
             start_date: startDate,
@@ -126,7 +135,7 @@ function App() {
         full_name: values.full_name.trim(),
         position: values.position.trim(),
         phone: values.phone.trim(),
-        active: values.active === "on",
+        status: values.status,
       };
     } else {
       path = record ? `/shifts/${record.id}` : "/shifts";
@@ -223,13 +232,12 @@ function App() {
         .includes(normalizedEmployeeSearch);
     const matchesBranch = !employeeBranchFilter || String(employee.branch_id) === employeeBranchFilter;
     const matchesPosition = !employeePositionFilter || employee.position === employeePositionFilter;
-    const matchesStatus = !employeeStatusFilter
-      || (employeeStatusFilter === "active" ? employee.active : !employee.active);
+    const matchesStatus = !employeeStatusFilter || employee.status === employeeStatusFilter;
     return matchesSearch && matchesBranch && matchesPosition && matchesStatus;
   });
   const navigation = [
     ["dashboard", "Обзор", "◫"],
-    ...(isManager ? [["employees", "Сотрудники", "♙"]] : []),
+    ["employees", "Сотрудники", "♙"],
     ["shifts", "Смены и отчеты", "▤"],
     ...(isManager ? [["branches", "Филиалы", "⌂"]] : []),
   ];
@@ -305,8 +313,13 @@ function App() {
             </>
           )}
 
-          {view === "employees" && isManager && (
-            <Panel title="Сотрудники" description="Карточки персонала филиалов.">
+          {view === "employees" && (
+            <Panel
+              title="Сотрудники"
+              description={isManager
+                ? "Карточки персонала филиалов."
+                : "Сотрудники вашего филиала. Редактирование доступно руководителю."}
+            >
               <div className="toolbar">
                 <SelectField
                   ariaLabel="Фильтр по филиалу"
@@ -338,9 +351,11 @@ function App() {
                   value={employeeStatusFilter}
                   onChange={setEmployeeStatusFilter}
                   options={[
-                    { value: "", label: "Все статусы" },
-                    { value: "active", label: "Работает" },
-                    { value: "inactive", label: "Не работает" },
+                    { value: "", label: "Любой статус" },
+                    { value: "Работает", label: "Работает" },
+                    { value: "В отпуске", label: "В отпуске" },
+                    { value: "На больничном", label: "На больничном" },
+                    { value: "Не работает", label: "Не работает" },
                   ]}
                 />
                 <input
@@ -351,13 +366,15 @@ function App() {
                   value={employeeSearch}
                   onChange={(event) => setEmployeeSearch(event.target.value)}
                 />
-                <span className="spacer" />
-                <button className="primary" onClick={() => setModal({ type: "employee" })}>＋ Добавить сотрудника</button>
+                {isManager && <>
+                  <span className="spacer" />
+                  <button className="primary" onClick={() => setModal({ type: "employee" })}>＋ Добавить сотрудника</button>
+                </>}
               </div>
-              <DataTable columns={["ФИО", "Должность", "Телефон", "Филиал", "Статус", ""]} rows={visibleEmployees.map((employee) => [
+              <DataTable columns={["ФИО", "Должность", "Телефон", "Филиал", "Статус", ...(isManager ? [""] : [])]} rows={visibleEmployees.map((employee) => [
                 employee.full_name, employee.position, employee.phone || "—", employee.branch,
-                <span className={`status ${employee.active ? "active" : ""}`} key="status">{employee.active ? "Работает" : "Не работает"}</span>,
-                <RowActions key="actions" onEdit={() => setModal({ type: "employee", record: employee })} onDelete={() => deleteRecord("employee", employee)} />,
+                <span className={`status ${statusClass(employee.status)}`} key="status">{employee.status}</span>,
+                ...(isManager ? [<RowActions key="actions" onEdit={() => setModal({ type: "employee", record: employee })} onDelete={() => deleteRecord("employee", employee)} />] : []),
               ])} />
               <div className="table-footer">Показано: {visibleEmployees.length} из {pageData.employees.length}</div>
             </Panel>
@@ -580,6 +597,9 @@ function RecordModal({ modal, branches, defaultBranchId, onClose, onSubmit, onEr
   const [employees, setEmployees] = useState([]);
   const initialBranch = modal.record?.branch_id ?? defaultBranchId ?? branches[0]?.id ?? "";
   const [selectedBranch, setSelectedBranch] = useState(String(initialBranch));
+  const [selectedEmployeeStatus, setSelectedEmployeeStatus] = useState(
+    modal.record?.status || (modal.record?.active === false ? "Не работает" : "Работает"),
+  );
   const [selectedEmployee, setSelectedEmployee] = useState(String(modal.record?.employee_id ?? ""));
   const [selectedShiftName, setSelectedShiftName] = useState(modal.record?.shift_name || "Дневная");
   useEffect(() => {
@@ -611,7 +631,7 @@ function RecordModal({ modal, branches, defaultBranchId, onClose, onSubmit, onEr
         {type === "employee" && <>
           <label>ФИО<input name="full_name" required defaultValue={record?.full_name || ""} autoFocus /></label>
           <label>Должность<input name="position" required defaultValue={record?.position || ""} /></label>
-          <label>Телефон<input name="phone" defaultValue={record?.phone || ""} /></label>
+          <label>Телефон<input name="phone" type="tel" required maxLength="50" placeholder="+7 700 000 00 00" defaultValue={record?.phone || ""} /></label>
           <label className="select-label">Филиал
             <SelectField
               name="branch_id"
@@ -625,7 +645,15 @@ function RecordModal({ modal, branches, defaultBranchId, onClose, onSubmit, onEr
               }))}
             />
           </label>
-          <label className="checkbox-label"><input name="active" type="checkbox" defaultChecked={record?.active ?? true} /> Сотрудник работает</label>
+          <label className="select-label">Статус
+            <SelectField
+              name="status"
+              ariaLabel="Статус сотрудника"
+              value={selectedEmployeeStatus}
+              onChange={setSelectedEmployeeStatus}
+              options={employeeStatuses.map((status) => ({ value: status, label: status }))}
+            />
+          </label>
         </>}
         {type === "shift" && <>
           <label className="select-label">Филиал

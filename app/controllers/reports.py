@@ -60,7 +60,7 @@ def export_shifts(
                 employee["position"],
                 employee["phone"],
                 employee["branch"],
-                "Работает" if employee["active"] else "Не работает",
+                employee["status"],
             ]
         )
 

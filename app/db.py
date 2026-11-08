@@ -77,8 +77,39 @@ class Database:
                         position TEXT NOT NULL,
                         phone TEXT NOT NULL DEFAULT '',
                         active BOOLEAN NOT NULL DEFAULT TRUE,
+                        status TEXT NOT NULL DEFAULT 'Работает',
                         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
+                    """
+                )
+                cursor.execute("ALTER TABLE employees ADD COLUMN IF NOT EXISTS status TEXT")
+                cursor.execute(
+                    """
+                    UPDATE employees
+                    SET status = CASE WHEN active THEN 'Работает' ELSE 'Не работает' END
+                    WHERE status IS NULL
+                       OR status NOT IN ('Работает', 'В отпуске', 'На больничном', 'Не работает')
+                    """
+                )
+                cursor.execute(
+                    "ALTER TABLE employees ALTER COLUMN status SET DEFAULT 'Работает'"
+                )
+                cursor.execute("ALTER TABLE employees ALTER COLUMN status SET NOT NULL")
+                cursor.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint
+                            WHERE conname = 'employees_status_check'
+                              AND conrelid = 'employees'::regclass
+                        ) THEN
+                            ALTER TABLE employees
+                            ADD CONSTRAINT employees_status_check
+                            CHECK (status IN ('Работает', 'В отпуске', 'На больничном', 'Не работает'));
+                        END IF;
+                    END
+                    $$
                     """
                 )
                 cursor.execute(
@@ -218,7 +249,8 @@ class Database:
 
     def get_employees(self, branch_id=None):
         query = """
-            SELECT e.id, e.branch_id, e.full_name, e.position, e.phone, e.active, b.name AS branch
+            SELECT e.id, e.branch_id, e.full_name, e.position, e.phone, e.status,
+                   (e.status = 'Работает') AS active, b.name AS branch
             FROM employees e JOIN branches b ON b.id = e.branch_id
         """
         parameters = ()
@@ -236,30 +268,48 @@ class Database:
             with connection.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(
                     "SELECT id, full_name, position FROM employees "
-                    "WHERE branch_id = %s AND active = TRUE ORDER BY full_name",
+                    "WHERE branch_id = %s AND status = 'Работает' ORDER BY full_name",
                     (branch_id,),
                 )
                 return cursor.fetchall()
 
-    def save_employee(self, employee_id, branch_id, full_name, position, phone, active):
+    def save_employee(self, employee_id, branch_id, full_name, position, phone, status):
+        is_working = status == "Работает"
         with self.connect() as connection:
             with connection.cursor() as cursor:
                 if employee_id is None:
                     cursor.execute(
                         """
-                        INSERT INTO employees (branch_id, full_name, position, phone, active)
-                        VALUES (%s, %s, %s, %s, %s)
+                        INSERT INTO employees
+                            (branch_id, full_name, position, phone, active, status)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         """,
-                        (branch_id, full_name.strip(), position.strip(), phone.strip(), active),
+                        (
+                            branch_id,
+                            full_name.strip(),
+                            position.strip(),
+                            phone.strip(),
+                            is_working,
+                            status,
+                        ),
                     )
                 else:
                     cursor.execute(
                         """
                         UPDATE employees
-                        SET branch_id = %s, full_name = %s, position = %s, phone = %s, active = %s
+                        SET branch_id = %s, full_name = %s, position = %s, phone = %s,
+                            active = %s, status = %s
                         WHERE id = %s
                         """,
-                        (branch_id, full_name.strip(), position.strip(), phone.strip(), active, employee_id),
+                        (
+                            branch_id,
+                            full_name.strip(),
+                            position.strip(),
+                            phone.strip(),
+                            is_working,
+                            status,
+                            employee_id,
+                        ),
                     )
 
     def delete_employee(self, employee_id):
@@ -356,7 +406,7 @@ class Database:
             with connection.cursor() as cursor:
                 cursor.execute(
                     f"SELECT COUNT(*) FROM employees {branch_filter}"
-                    f"{' AND' if branch_id is not None else ' WHERE'} active = TRUE",
+                    f"{' AND' if branch_id is not None else ' WHERE'} status = 'Работает'",
                     parameters,
                 )
                 employee_count = cursor.fetchone()[0]

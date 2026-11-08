@@ -28,7 +28,8 @@ class FakeDatabase:
                 "branch_id": 1,
                 "full_name": "Кассир",
                 "position": "Кассир",
-                "phone": "",
+                "phone": "+77001234567",
+                "status": "Работает",
                 "active": True,
                 "branch": "Главный",
             },
@@ -37,7 +38,8 @@ class FakeDatabase:
                 "branch_id": 2,
                 "full_name": "Другой кассир",
                 "position": "Кассир",
-                "phone": "",
+                "phone": "+77007654321",
+                "status": "Работает",
                 "active": True,
                 "branch": "Второй",
             },
@@ -81,7 +83,7 @@ class FakeDatabase:
         return [
             {"id": employee["id"], "full_name": employee["full_name"], "position": employee["position"]}
             for employee in self.employees
-            if employee["branch_id"] == branch_id and employee["active"]
+            if employee["branch_id"] == branch_id and employee["status"] == "Работает"
         ]
 
     def get_shifts(self, start_date, end_date, branch_id=None):
@@ -149,14 +151,16 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(self.client.get("/api/dashboard").status_code, 200)
         self.assertEqual(self.database.dashboard_branch_id, 1)
-        self.assertEqual(
-            self.client.get("/api/employees/branch/1").status_code,
-            200,
-        )
+        employees = self.client.get("/api/employees").json()
+        self.assertEqual([employee["id"] for employee in employees], [11])
+        self.assertEqual(employees[0]["status"], "Работает")
+        self.assertEqual(employees[0]["phone"], "+77001234567")
+        self.assertEqual(self.client.get("/api/employees/branch/1").status_code, 200)
         self.assertEqual(
             self.client.get("/api/employees/branch/2").status_code,
             403,
         )
+        self.assertEqual(self.client.get("/api/employees?branch_id=2").status_code, 403)
         self.assertEqual(
             self.client.get("/api/dashboard?branch_id=2").status_code,
             403,
@@ -173,15 +177,15 @@ class ApiTests(unittest.TestCase):
             json={"name": "Новый", "address": ""},
         )
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(self.client.get("/api/employees").status_code, 403)
+        self.assertEqual(self.client.get("/api/employees").status_code, 200)
         response = self.client.post(
             "/api/employees",
             json={
                 "branch_id": 1,
                 "full_name": "Тест",
                 "position": "Кассир",
-                "phone": "",
-                "active": True,
+                "phone": "+77001234568",
+                "status": "Работает",
             },
         )
         self.assertEqual(response.status_code, 403)
@@ -200,12 +204,59 @@ class ApiTests(unittest.TestCase):
                 "branch_id": 1,
                 "full_name": "Новый сотрудник",
                 "position": "Кассир",
-                "phone": "",
-                "active": True,
+                "phone": "8 (700) 123-45-67",
+                "status": "Работает",
             },
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(self.database.saved_employee[1:3], (1, "Новый сотрудник"))
+        self.assertEqual(self.database.saved_employee[4:], ("+77001234567", "Работает"))
+
+    def test_manager_can_save_employee_leave_status_and_phone_is_normalized(self):
+        self.login()
+        response = self.client.post(
+            "/api/employees",
+            json={
+                "branch_id": 1,
+                "full_name": "Сотрудник",
+                "position": "Пекарь",
+                "phone": "+7 (701) 555-12-34",
+                "status": "В отпуске",
+            },
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.database.saved_employee[4:], ("+77015551234", "В отпуске"))
+
+    def test_employee_phone_and_status_validation(self):
+        self.login()
+        payload = {
+            "branch_id": 1,
+            "full_name": "Сотрудник",
+            "position": "Продавец",
+            "phone": "+77015551234",
+            "status": "В отпуске",
+        }
+        payload["phone"] = "123"
+        self.assertEqual(self.client.post("/api/employees", json=payload).status_code, 422)
+        payload["phone"] = "+77015551234"
+        payload["status"] = "Неизвестный статус"
+        self.assertEqual(self.client.post("/api/employees", json=payload).status_code, 422)
+        self.assertIsNone(self.database.saved_employee)
+
+    def test_employee_on_leave_or_sick_cannot_be_assigned_to_shift(self):
+        self.login()
+        for status in ("В отпуске", "На больничном", "Не работает"):
+            self.database.employees[0]["status"] = status
+            payload = {
+                "branch_id": 1,
+                "employee_id": 11,
+                "work_date": date.today().isoformat(),
+                "shift_name": "Дневная",
+                "hours": 8,
+            }
+            response = self.client.post("/api/shifts", json=payload)
+            self.assertEqual(response.status_code, 422, status)
+        self.assertIsNone(self.database.saved_shift)
 
     def test_cashier_can_add_shift_only_to_own_branch(self):
         self.login("cashier")
@@ -248,6 +299,7 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(workbook.sheetnames, ["Смены", "Сотрудники"])
             self.assertEqual(workbook["Смены"].cell(1, 1).value, "Дата")
             self.assertEqual(workbook["Сотрудники"].cell(1, 1).value, "ФИО")
+            self.assertEqual(workbook["Сотрудники"].cell(2, 5).value, "Работает")
 
     def test_desktop_export_saves_xlsx_through_native_file_dialog(self):
         report = self.client.post(

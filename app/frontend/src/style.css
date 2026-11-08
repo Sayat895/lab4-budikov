@@ -146,6 +146,9 @@ tbody tr:hover { background: #fcfaf6; }
 .table-wrap { max-height: calc(100vh - 315px); overflow: auto; }
 .status { background: #f1efeb; border-radius: 12px; color: #77716a; display: inline-block; font-size: 10px; padding: 5px 9px; white-space: nowrap; }
 .status.active { background: #e9f2ec; color: #35775c; }
+.status.vacation { background: #f8f0df; color: #896a28; }
+.status.sick-leave { background: #eaf0f8; color: #466488; }
+.status.inactive { background: #f3e8e8; color: #87575b; }
 .row-actions { display: flex; gap: 8px; white-space: nowrap; }
 .row-actions button { background: transparent; border: 0; color: #756d65; font-size: 11px; padding: 4px 0; }
 .row-actions button:hover { color: var(--wine); }
