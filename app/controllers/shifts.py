@@ -38,7 +38,7 @@ def create_shift(
     database=Depends(get_database),
 ):
     branch_id = scoped_branch_id(user, payload.branch_id)
-    validate_shift_employee(database, branch_id, payload.employee_id)
+    validate_shift_employee(database, branch_id, payload.employee_id, user)
     database.save_shift(
         None,
         branch_id,
@@ -61,7 +61,7 @@ def update_shift(
     database=Depends(get_database),
     user: dict = Depends(require_manager),
 ):
-    validate_shift_employee(database, payload.branch_id, payload.employee_id)
+    validate_shift_employee(database, payload.branch_id, payload.employee_id, user)
     database.save_shift(
         shift_id,
         payload.branch_id,

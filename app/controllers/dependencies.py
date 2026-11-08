@@ -7,6 +7,19 @@ from db import Database
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
+CASHIER_MANAGED_POSITIONS = frozenset(
+    {
+        "Кассир дневной",
+        "Кассир ночной",
+        "Продавец-кассир СП",
+        "Продавец-кассир СП дневной",
+        "Продавец-кассир СП ночной",
+    }
+)
+
+
+def cashier_can_manage_employee(employee: dict) -> bool:
+    return employee["position"] in CASHIER_MANAGED_POSITIONS
 
 
 def get_database(request: Request) -> Database:
@@ -46,15 +59,23 @@ def scoped_branch_id(user: dict, requested_branch_id: int | None) -> int | None:
     return branch_id
 
 
-def validate_shift_employee(database: Database, branch_id: int, employee_id: int | None):
+def validate_shift_employee(
+    database: Database, branch_id: int, employee_id: int | None, user: dict
+):
     validate_branch_id(database, branch_id)
     if employee_id is None:
         return
     employees = database.get_branch_employees(branch_id)
-    if not any(employee["id"] == employee_id for employee in employees):
+    employee = next((item for item in employees if item["id"] == employee_id), None)
+    if employee is None:
         raise HTTPException(
             status_code=422,
             detail="Сотрудник должен работать и не находиться в отпуске или на больничном.",
+        )
+    if user["role"] == "Старший кассир" and not cashier_can_manage_employee(employee):
+        raise HTTPException(
+            status_code=403,
+            detail="Старший кассир может регистрировать смены только своих кассиров.",
         )
 
 

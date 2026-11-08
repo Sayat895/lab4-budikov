@@ -27,7 +27,7 @@ class FakeDatabase:
                 "id": 11,
                 "branch_id": 1,
                 "full_name": "Кассир",
-                "position": "Кассир",
+                "position": "Кассир дневной",
                 "phone": "+77001234567",
                 "status": "Работает",
                 "active": True,
@@ -42,6 +42,56 @@ class FakeDatabase:
                 "status": "Работает",
                 "active": True,
                 "branch": "Второй",
+            },
+            {
+                "id": 13,
+                "branch_id": 1,
+                "full_name": "Пекарь",
+                "position": "Пекарь",
+                "phone": "+77001112233",
+                "status": "Работает",
+                "active": True,
+                "branch": "Главный",
+            },
+            {
+                "id": 14,
+                "branch_id": 1,
+                "full_name": "Кассир ночной",
+                "position": "Кассир ночной",
+                "phone": "+77001112234",
+                "status": "Работает",
+                "active": True,
+                "branch": "Главный",
+            },
+            {
+                "id": 15,
+                "branch_id": 1,
+                "full_name": "Продавец-кассир дневной",
+                "position": "Продавец-кассир СП дневной",
+                "phone": "+77001112235",
+                "status": "Работает",
+                "active": True,
+                "branch": "Главный",
+            },
+            {
+                "id": 16,
+                "branch_id": 1,
+                "full_name": "Продавец-кассир ночной",
+                "position": "Продавец-кассир СП ночной",
+                "phone": "+77001112236",
+                "status": "Работает",
+                "active": True,
+                "branch": "Главный",
+            },
+            {
+                "id": 17,
+                "branch_id": 1,
+                "full_name": "Продавец-кассир СП",
+                "position": "Продавец-кассир СП",
+                "phone": "+77001112237",
+                "status": "Работает",
+                "active": True,
+                "branch": "Главный",
             },
         ]
         self.shifts = []
@@ -152,10 +202,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/dashboard").status_code, 200)
         self.assertEqual(self.database.dashboard_branch_id, 1)
         employees = self.client.get("/api/employees").json()
-        self.assertEqual([employee["id"] for employee in employees], [11])
+        self.assertEqual([employee["id"] for employee in employees], [11, 13, 14, 15, 16, 17])
         self.assertEqual(employees[0]["status"], "Работает")
         self.assertEqual(employees[0]["phone"], "+77001234567")
         self.assertEqual(self.client.get("/api/employees/branch/1").status_code, 200)
+        self.assertEqual(
+            [employee["id"] for employee in self.client.get("/api/employees/branch/1").json()],
+            [11, 14, 15, 16, 17],
+        )
         self.assertEqual(
             self.client.get("/api/employees/branch/2").status_code,
             403,
@@ -283,6 +337,44 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.database.saved_shift[-1], self.database.cashier["id"])
         self.assertEqual(self.client.put("/api/shifts/1", json=payload).status_code, 403)
         self.assertEqual(self.client.delete("/api/shifts/1").status_code, 403)
+
+    def test_cashier_can_assign_each_managed_position(self):
+        self.login("cashier")
+        payload = {
+            "branch_id": 1,
+            "work_date": date.today().isoformat(),
+            "shift_name": "Дневная",
+            "hours": 8,
+        }
+        for employee_id in (11, 14, 15, 16, 17):
+            payload["employee_id"] = employee_id
+            with self.subTest(employee_id=employee_id):
+                self.assertEqual(self.client.post("/api/shifts", json=payload).status_code, 201)
+
+    def test_cashier_cannot_assign_employee_outside_managed_positions(self):
+        self.login("cashier")
+        payload = {
+            "branch_id": 1,
+            "employee_id": 13,
+            "work_date": date.today().isoformat(),
+            "shift_name": "Дневная",
+            "hours": 8,
+        }
+        response = self.client.post("/api/shifts", json=payload)
+        self.assertEqual(response.status_code, 403)
+        self.assertIsNone(self.database.saved_shift)
+
+    def test_manager_can_assign_employee_outside_cashier_managed_positions(self):
+        self.login()
+        payload = {
+            "branch_id": 1,
+            "employee_id": 13,
+            "work_date": date.today().isoformat(),
+            "shift_name": "Дневная",
+            "hours": 8,
+        }
+        response = self.client.post("/api/shifts", json=payload)
+        self.assertEqual(response.status_code, 201)
 
     def test_excel_report_contains_both_sheets_and_is_branch_scoped(self):
         self.login("cashier")

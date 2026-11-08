@@ -4,6 +4,7 @@ from psycopg2 import IntegrityError
 from controllers.dependencies import (
     get_current_user,
     get_database,
+    cashier_can_manage_employee,
     require_manager,
     scoped_branch_id,
     validate_branch_id,
@@ -30,7 +31,10 @@ def list_branch_employees(
     database=Depends(get_database),
 ):
     scoped_branch_id(user, branch_id)
-    return database.get_branch_employees(branch_id)
+    employees = database.get_branch_employees(branch_id)
+    if user["role"] == "Старший кассир":
+        return [employee for employee in employees if cashier_can_manage_employee(employee)]
+    return employees
 
 
 @router.post("", status_code=201)
